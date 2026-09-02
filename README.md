@@ -33,7 +33,9 @@ riscv32 bare metal with and without `alloc`.
 **J1 host half (2026-09-01):** `rusty_esp_image-esp::idf::IdfCamera` — the
 Track A capture backend over esp32-camera — and the XIAO ESP32-S3 Sense and
 AI-Thinker pin maps are written; the firmware that links them lives in
-`rusty_esp_video/firmware/xiao-s3-sense-idf-mjpeg`. Not compiled or run yet.
+`rusty_esp_video/firmware/xiao-s3-sense-idf-mjpeg` and **builds** for the
+XIAO ESP32-S3 Sense against esp32-camera 2.1.7 (`docs/LEDGER.md`). Not run
+on a sensor yet.
 
 Not yet: the board (I1's frame count), the DVP engine over `lcd_cam` (Track
 B, I2), MIPI-CSI on P4 (I4), and on-chip JPEG encoding via `rusty_jpeg` (I3,

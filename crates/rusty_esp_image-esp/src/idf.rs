@@ -25,9 +25,9 @@
 use core::ffi::c_int;
 
 use esp_idf_sys::camera as sys;
-use rusty_esp_image_core::core::error::{Error, Result};
-use rusty_esp_image_core::core::frame::{Frame, Geometry, PixelFormat};
-use rusty_esp_image_core::core::time::Micros;
+use rusty_esp_image_core::esp_core::error::{Error, Result};
+use rusty_esp_image_core::esp_core::frame::{Frame, Geometry, PixelFormat};
+use rusty_esp_image_core::esp_core::time::Micros;
 use rusty_esp_image_core::sensor::{FrameSize, Mode};
 use rusty_esp_image_core::source::ImageSource;
 
@@ -110,7 +110,7 @@ impl IdfCamera {
         // SAFETY: `cfg` is fully initialised and outlives the call; the driver
         // copies what it needs. Called once per process by contract of this type.
         let err = unsafe { sys::esp_camera_init(&cfg) };
-        if err != esp_idf_sys::ESP_OK {
+        if err != esp_idf_sys::ESP_OK as esp_idf_sys::esp_err_t {
             return Err(Error::Hardware);
         }
         Ok(IdfCamera {

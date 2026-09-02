@@ -32,10 +32,18 @@ Unit tests: **17 pass**.
 behind `ImageSource`: init from a `CameraPins` + `Mode`, one copy per frame out
 of the driver's PSRAM buffer, orientation control, deinit on drop) and the pin
 maps `XIAO_ESP32S3_SENSE` and `AI_THINKER_ESP32_CAM`. It compiles only in an
-ESP-IDF firmware build and has not been compiled or run yet; the host gate
-(check, clippy, riscv32 both rungs) stays green with the feature off.
+ESP-IDF firmware build; the host gate (check, clippy, riscv32 both rungs) stays
+green with the feature off.
+
+**First Track A build (2026-09-01, this machine):** `IdfCamera` compiles for
+`xtensa-esp32s3-espidf` against ESP-IDF v5.5.1 and esp32-camera **2.1.7**
+(pulled by the IDF component manager, with `espressif/esp_jpeg` ^1.3.1 as its
+dependency; pinned in the firmware's `components_esp32s3.lock`), through the
+`esp_idf_sys::camera` bindings module. The union fields `pin_sccb_sda` /
+`pin_sccb_scl` and `fb_count: usize` are as the bindings name them. Not run:
+the sensor has not been powered yet.
 
 ## Not yet measured
 
-- Frames per second and pool exhaustion on a XIAO ESP32-S3 Sense (I1; needs the board).
+- Frames per second, `empty_frames` and pool exhaustion on a XIAO ESP32-S3 Sense (I1; needs the board).
 - Kernel throughput per chip; the PIE ceiling probes (I5).
