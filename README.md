@@ -30,10 +30,14 @@ kernels with test vectors, the OV2640 and OV5640 register tables as data
 descriptors, and SCCB register access. 17 tests pass; the core compiles for
 riscv32 bare metal with and without `alloc`.
 
-Not yet: the capture engines (DVP on ESP32-S3 via `lcd_cam`, the esp32-camera
-wrap on ESP-IDF, MIPI-CSI on P4) and the mode-switch state machine — that is
-I1 and needs a board. On-chip JPEG encoding via `rusty_jpeg` is I3 and waits on
-its `no_std` encoder.
+**J1 host half (2026-09-01):** `rusty_esp_image-esp::idf::IdfCamera` — the
+Track A capture backend over esp32-camera — and the XIAO ESP32-S3 Sense and
+AI-Thinker pin maps are written; the firmware that links them lives in
+`rusty_esp_video/firmware/xiao-s3-sense-idf-mjpeg`. Not compiled or run yet.
+
+Not yet: the board (I1's frame count), the DVP engine over `lcd_cam` (Track
+B, I2), MIPI-CSI on P4 (I4), and on-chip JPEG encoding via `rusty_jpeg` (I3,
+waiting on its `no_std` encoder).
 
 ## What is in the core
 

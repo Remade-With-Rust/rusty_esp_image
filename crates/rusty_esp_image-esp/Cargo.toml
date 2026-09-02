@@ -1,6 +1,6 @@
 [package]
 name = "rusty_esp_image-esp"
-description = "Chip backends for rusty_esp_image: the WRAP crate. `esp-hal` (Track B, no_std + Embassy) or `esp-idf` (Track A, std on ESP-IDF). The only crate in the workspace allowed a fenced unsafe block, and only at a DMA or FFI boundary."
+description = "Chip backends for rusty_esp_image: the WRAP crate. `esp-idf` (Track A, std on ESP-IDF) binds the esp32-camera component once behind the ImageSource seam; `esp-hal` (Track B, no_std + Embassy) is the DVP engine over lcd_cam. The only crate in the workspace allowed a fenced unsafe block, and only at a DMA or FFI boundary."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,22 +10,25 @@ authors.workspace = true
 rust-version.workspace = true
 readme = "README.md"
 documentation = "https://docs.rs/rusty_esp_image-esp"
-keywords = ["esp32", "embedded", "esp-hal", "esp-idf", "remade-with-rust"]
+keywords = ["esp32", "embedded", "esp-hal", "esp-idf", "camera"]
 categories = ["embedded", "no-std", "hardware-support"]
 
 [features]
 default = []
 std = ["rusty_esp_image-core/std"]
 alloc = ["rusty_esp_image-core/alloc"]
-# Track B — bare metal: esp-hal + Embassy. The esp-hal / esp-radio / esp-alloc
-# dependencies land behind this feature with the first driver, pinned to the
-# versions recorded in the plan.
+# Track A — std on ESP-IDF. `IdfCamera` wraps the esp32-camera component; the
+# firmware that links it must declare that component in its
+# `[package.metadata.esp-idf-sys]` with `bindings_module = "camera"`
+# (see firmware/xiao-s3-sense-idf-mjpeg in rusty_esp_video).
+esp-idf = ["std", "dep:esp-idf-sys"]
+# Track B — bare metal: the DVP engine over esp-hal `lcd_cam::cam` lands here
+# with its esp-hal pin.
 esp-hal = ["alloc"]
-# Track A — std on ESP-IDF via esp-idf-svc. Same rule.
-esp-idf = ["std"]
 
 [dependencies]
 rusty_esp_image-core = { workspace = true }
+esp-idf-sys = { version = "0.37", optional = true }
 
 [lints]
 workspace = true

@@ -26,6 +26,15 @@ Unit tests: **17 pass**.
 | 2026-09-01 | OV2640 register tables (7 tables) | **302 steps** | converter over esp32-camera `ov2640_settings.h` @ `202df95d7b1d`; terminators dropped |
 | 2026-09-01 | OV5640 register tables (9 tables, incl. gamma and AWB) | **216 steps** (writes + delay steps) | converter over `ov5640_settings.h` @ same commit |
 
+## J1 host half (2026-09-01)
+
+`rusty_esp_image-esp` gained the Track A backend `idf::IdfCamera` (esp32-camera
+behind `ImageSource`: init from a `CameraPins` + `Mode`, one copy per frame out
+of the driver's PSRAM buffer, orientation control, deinit on drop) and the pin
+maps `XIAO_ESP32S3_SENSE` and `AI_THINKER_ESP32_CAM`. It compiles only in an
+ESP-IDF firmware build and has not been compiled or run yet; the host gate
+(check, clippy, riscv32 both rungs) stays green with the feature off.
+
 ## Not yet measured
 
 - Frames per second and pool exhaustion on a XIAO ESP32-S3 Sense (I1; needs the board).
