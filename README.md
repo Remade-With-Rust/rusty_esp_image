@@ -1,74 +1,83 @@
 # rusty_esp_image
 
-[![crates.io](https://img.shields.io/crates/v/rusty_esp_image.svg)](https://crates.io/crates/rusty_esp_image)
-[![docs.rs](https://docs.rs/rusty_esp_image/badge.svg)](https://docs.rs/rusty_esp_image)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-esp32-camera / esp_jpeg remade in Rust: sensor bring-up as data, DMA frame pools, pixel ops, JPEG/PNG via rusty_jpeg and rusty_png. Memory safe, no_std core.
+esp32-camera and Espressif's JPEG components remade in Rust: sensor bring-up
+as **data**, DMA frame pools that never allocate, pixel kernels with scalar
+oracles, a JPEG header probe, and SCCB register access over `embedded-hal` —
+so a camera on an ESP32 hands a validated, borrowed frame to whoever asks for
+one.
 
 Part of **Janus**, the Remade-With-Rust programme that rebuilds the Espressif
-ESP32 and Arduino application portfolio in memory-safe Rust so hardware makers
-can ship products that plug straight into the MATA home computer.
+ESP32 and Arduino application portfolio in memory-safe Rust for the MATA home
+computer.
 
 - This package's plan: [docs/plans/rusty_esp_image.md](docs/plans/rusty_esp_image.md)
+- Numbers: [docs/LEDGER.md](docs/LEDGER.md)
+- Third-party data: [LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md)
 - The family plan: Janus `docs/plans/janus-mission.md` (umbrella repo)
 
-**Claims discipline:** this README makes no performance or capability claim that
-is not backed by a test, a benchmark ledger entry, or a kill test recorded in the
-plan. "Scaffold" means scaffold.
+**Claims discipline:** every number in this README is in the ledger with the
+run that produced it. Nothing here has run on a chip yet.
 
 ## Status
 
-**M0 — scaffold.** Crate layout, feature ladder and CI gates exist. Nothing here
-runs on a chip yet. The first milestone with a kill test is listed in the plan.
+**I0 shipped on the host (2026-09-01).** The core has everything a capture
+driver needs *above* the DMA engine: the `ImageSource` seam, a caller-owned
+`FramePool`, a JPEG header probe verified against the house encoder, pixel
+kernels with test vectors, the OV2640 and OV5640 register tables as data
+(derived mechanically from esp32-camera, Apache-2.0, attributed), sensor
+descriptors, and SCCB register access. 17 tests pass; the core compiles for
+riscv32 bare metal with and without `alloc`.
 
-## What it is
+Not yet: the capture engines (DVP on ESP32-S3 via `lcd_cam`, the esp32-camera
+wrap on ESP-IDF, MIPI-CSI on P4) and the mode-switch state machine — that is
+I1 and needs a board. On-chip JPEG encoding via `rusty_jpeg` is I3 and waits on
+its `no_std` encoder.
 
-- A pure-Rust remake of the *application* layer Espressif ships in C for this
-  function. Same job, same protocols and file formats, new code, permissive
-  licence, `forbid(unsafe)` in the core.
-- Track-agnostic: the core crate is `no_std + alloc` and knows nothing about
-  ESP-IDF or `esp-hal`. Backends are thin and feature-gated.
+## What is in the core
 
-## What it is not
+| Module | What |
+|---|---|
+| `source` | `ImageSource`: `geometry()` and `grab(out) -> Frame` into caller memory; `TestPattern` colour bars for host and smoke tests |
+| `pool` | `FramePool<N>`: N equal slots over one buffer, acquire / fill / commit / frame / release, never blocks, never allocates |
+| `jpeg` | `probe`: width, height, precision, components, progressive flag from the SOF segment, no decode; `find_eoi` trims DMA padding |
+| `ops` | RGB565 ↔ RGB888, YUYV → RGB888 / RGB565 / Gray8, 2× box downscale (gray, RGB565), crop, rotate 90° and 180° — scalar, the oracles for any PIE twin |
+| `sensor` | `SensorId` (18 parts, product ids), `SensorDesc` (OV2640, OV5640, OV3660, OV7670), `FrameSize`, `Mode`, `RegOp`; `ov2640` (302 steps) and `ov5640` (216 steps) register tables |
+| `sccb` | `Sccb<I2c>`: 8/16-bit register read and write, `apply` a table with delay steps, `probe` a product id |
 
-- Not a rewrite of the radio PHY, the ROM, or Espressif's Wi-Fi/BT controller
-  blob. Where the silicon must be touched, the `-esp` crate **wraps** the
-  esp-rs HAL or ESP-IDF and says so.
-- Not a fork of esp-hal, esp-radio, espflash or ESP-IDF. Those are dependencies.
+```rust
+use rusty_esp_image::prelude::*;
+
+// a DMA ring in user clothes: two slots over one static buffer
+static mut RING: [u8; 2 * 64 * 1024] = [0; 2 * 64 * 1024];
+let mut pool: FramePool<'_, 2> = FramePool::new(ring)?;
+let slot = pool.acquire().ok_or(Error::Busy)?;
+let n = camera.grab_into(pool.slot_mut(slot)?)?;        // the -esp backend fills it
+pool.commit(slot, n)?;
+let info = probe(pool.slot(slot)?)?;                    // geometry from the JPEG header
+let frame = pool.frame(slot, info.geometry, clock.now(), seq)?;
+```
 
 ## Layout
 
 ```text
-crates/rusty_esp_image          facade: re-exports + prelude; the crate you depend on
-crates/rusty_esp_image-core     no_std + alloc; forbid(unsafe); types, traits, algorithms
-crates/rusty_esp_image-esp      the WRAP crate: `esp-hal` (Track B) | `esp-idf` (Track A)
-firmware/                per-chip example projects, excluded from the workspace
-docs/plans/              the mission plan for this package
+crates/rusty_esp_image          facade
+crates/rusty_esp_image-core     no_std + alloc; forbid(unsafe); the core above
+crates/rusty_esp_image-esp      the WRAP crate: `esp-hal` | `esp-idf` capture engines (I1)
+docs/plans/rusty_esp_image.md   the plan · docs/LEDGER.md the numbers
+LICENSE-THIRD-PARTY.md          provenance of the register tables
 ```
-
-## Two tracks, one core
-
-| Track | Feature | Runtime | Use when |
-|---|---|---|---|
-| **A** | `esp-idf` | `std` on ESP-IDF (FreeRTOS) | you need iroh, TLS, or a driver ESP-IDF has and esp-hal lacks |
-| **B** | `esp-hal` | `no_std` + Embassy | the purity path; every driver upstream in esp-rs |
-
-The core compiles on both and on the host, which is where its tests run.
 
 ## Build
 
 ```sh
-cargo test --workspace                                   # host: the tests
-cargo check -p rusty_esp_image-core --no-default-features \
-  --target riscv32imac-unknown-none-elf                  # ESP32-C6 class, no alloc
-cargo check -p rusty_esp_image-core --no-default-features --features alloc \
-  --target riscv32imac-unknown-none-elf
+cargo test --workspace
+cargo check -p rusty_esp_image-core --no-default-features --target riscv32imac-unknown-none-elf
+cargo check -p rusty_esp_image-core --no-default-features --features alloc --target riscv32imac-unknown-none-elf
 ```
-
-Firmware examples (Xtensa needs `espup`; RISC-V works on stable) are built from
-their own directories under `firmware/`.
 
 ## License
 
-MIT OR Apache-2.0, at your option.
+MIT OR Apache-2.0, at your option. The sensor register tables are derived
+from Apache-2.0 material; see `LICENSE-THIRD-PARTY.md`.

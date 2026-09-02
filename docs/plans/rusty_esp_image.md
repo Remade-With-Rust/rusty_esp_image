@@ -9,7 +9,7 @@ Family plan: Janus `docs/plans/janus-mission.md`. Layer 1 · media. Depends on
 `rusty_esp_core` only. `rusty_esp_video` depends on this crate's
 `ImageSource`.
 
-Written 2026-09-01. Status: **scaffold.**
+Written 2026-09-01. Status: **I0 shipped on the host** (`docs/LEDGER.md`); I1 needs a board.
 
 ---
 
@@ -83,7 +83,7 @@ PIE twin; `JpegProbe` parses only the marker headers it needs.
 
 | # | Deliverable | Kill test |
 |---|---|---|
-| **I0** | core types, `FramePool`, `JpegProbe`, `ops` with test vectors, sensor tables for OV2640 and OV5640 as data, `Sccb` | host tests; `JpegProbe` returns the right `Geometry` for 20 sensor-captured JPEGs (fixture corpus); riscv32 checks green |
+| **I0** ✅ 2026-09-01 | `ImageSource` + `TestPattern`, `FramePool`, `jpeg::probe` + `find_eoi`, `ops` with test vectors, `SensorId`/`SensorDesc`/`FrameSize`/`Mode`, OV2640 (302 steps) and OV5640 (216 steps) tables as data from esp32-camera (attributed), `Sccb` with delay steps and 1/2-byte PID probe | **passed:** 17 host tests; the probe reads geometry, components and the progressive flag back from 16 `rusty_jpeg`-encoded images (baseline + progressive, RGB + gray) — real sensor captures replace the encoder corpus at I1; the full OV2640 init table applies over a fake bus; riscv32 green with and without `alloc`; clippy clean. See `docs/LEDGER.md` |
 | **I1** (J1) | Track A `IdfCamera` on XIAO S3 Sense (OV2640, JPEG mode) | 320×240 JPEG frames counted on serial at a recorded FPS for 10 minutes with zero pool exhaustion; every frame passes `Frame::packed` (starts `FF D8`) |
 | **I2** | Track B `HalCamera` via `lcd_cam::cam` on S3, YUYV/RGB565 modes | same test, `no_std`; frame bytes byte-identical to Track A for a static test chart |
 | **I3** | `rusty_jpeg` encoder `no_std` → on-chip encode of RGB565/YUYV frames | on-chip JPEG byte-identical to the host encoder for the same raw frame and quality |

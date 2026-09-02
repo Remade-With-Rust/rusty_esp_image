@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "embedded-hal"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
+
+[[package]]
 name = "rusty_esp_core"
 version = "0.1.0"
 
@@ -18,7 +24,9 @@ dependencies = [
 name = "rusty_esp_image-core"
 version = "0.1.0"
 dependencies = [
+ "embedded-hal",
  "rusty_esp_core",
+ "rusty_jpeg",
 ]
 
 [[package]]
@@ -27,3 +35,9 @@ version = "0.1.0"
 dependencies = [
  "rusty_esp_image-core",
 ]
+
+[[package]]
+name = "rusty_jpeg"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "383e8c8b54f0268005917db8d0a868d518f00aa723c140bc09d8bfd83f0c2949"
