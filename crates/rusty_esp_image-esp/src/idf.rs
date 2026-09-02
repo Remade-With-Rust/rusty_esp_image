@@ -110,7 +110,7 @@ impl IdfCamera {
         // SAFETY: `cfg` is fully initialised and outlives the call; the driver
         // copies what it needs. Called once per process by contract of this type.
         let err = unsafe { sys::esp_camera_init(&cfg) };
-        if err != sys::ESP_OK {
+        if err != esp_idf_sys::ESP_OK {
             return Err(Error::Hardware);
         }
         Ok(IdfCamera {
