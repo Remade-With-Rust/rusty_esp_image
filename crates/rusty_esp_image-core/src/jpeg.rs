@@ -122,6 +122,179 @@ pub fn find_eoi(bytes: &[u8]) -> Option<usize> {
     None
 }
 
+/// JPEG encoding on the chip: a raw frame into a caller-owned buffer through
+/// `rusty_jpeg` (`no_std` + `alloc`, the 0.4 release made for this).
+///
+/// YUYV is coded as the sensor delivered it (`rusty_jpeg::YuyvImage`, no
+/// colour conversion of our own); RGB888, BGR888, RGBA8888 and Gray8 go
+/// through the encoder's own colour types. The output is a baseline JPEG
+/// with the standard Huffman tables, which is what the RTP/JPEG payloader
+/// and every browser expect. Feature `jpeg`.
+#[cfg(feature = "jpeg")]
+pub mod encode {
+    use rusty_esp_core::error::{Error, Result};
+    use rusty_esp_core::frame::{Frame, Geometry, PixelFormat, Planes};
+    use rusty_jpeg::encode::{ColorType, Encoder, EncodingError, SliceWriter, YuyvImage};
+
+    /// A buffer this large always holds the JPEG of a `geometry` frame at
+    /// any quality: three bytes per pixel (a baseline JPEG of noise at
+    /// quality 100 stays under that) plus room for the headers.
+    #[must_use]
+    pub fn max_bytes(geometry: &Geometry) -> usize {
+        (geometry.width as usize)
+            .saturating_mul(geometry.height as usize)
+            .saturating_mul(3)
+            .saturating_add(4096)
+    }
+
+    /// Encode packed `data` of `geometry` at `quality` (1–100) into `out`;
+    /// returns the JPEG's length. `Unsupported` for a format with no packed
+    /// pixels (planar, coded), `InvalidGeometry` when `data` is short or a
+    /// side exceeds 65 535, `BufferTooSmall` (with [`max_bytes`] as the need)
+    /// when `out` cannot hold it.
+    pub fn encode_packed(
+        geometry: Geometry,
+        data: &[u8],
+        quality: u8,
+        out: &mut [u8],
+    ) -> Result<usize> {
+        let (w, h) = (
+            u16::try_from(geometry.width).map_err(|_| Error::InvalidGeometry)?,
+            u16::try_from(geometry.height).map_err(|_| Error::InvalidGeometry)?,
+        );
+        if w == 0 || h == 0 {
+            return Err(Error::InvalidGeometry);
+        }
+        let needed = geometry.byte_len().ok_or(Error::Unsupported)?;
+        if data.len() < needed {
+            return Err(Error::InvalidGeometry);
+        }
+        let quality = quality.clamp(1, 100);
+        let mut writer = SliceWriter::new(out);
+        let result = match geometry.format {
+            PixelFormat::Yuyv422 => {
+                let image =
+                    YuyvImage::new(data, usize::from(w) * 2, w, h).ok_or(Error::InvalidGeometry)?;
+                Encoder::new(&mut writer, quality).encode_image(image)
+            }
+            PixelFormat::Rgb888 => {
+                Encoder::new(&mut writer, quality).encode(data, w, h, ColorType::Rgb)
+            }
+            PixelFormat::Bgr888 => {
+                Encoder::new(&mut writer, quality).encode(data, w, h, ColorType::Bgr)
+            }
+            PixelFormat::Rgba8888 => {
+                Encoder::new(&mut writer, quality).encode(data, w, h, ColorType::Rgba)
+            }
+            PixelFormat::Gray8 => {
+                Encoder::new(&mut writer, quality).encode(data, w, h, ColorType::Luma)
+            }
+            _ => return Err(Error::Unsupported),
+        };
+        match result {
+            Ok(()) => Ok(writer.written()),
+            Err(EncodingError::BufferTooSmall) => Err(Error::BufferTooSmall {
+                needed: max_bytes(&geometry),
+            }),
+            Err(_) => Err(Error::InvalidFormat),
+        }
+    }
+
+    /// [`encode_packed`] for a borrowed frame.
+    pub fn encode_frame(frame: &Frame<'_>, quality: u8, out: &mut [u8]) -> Result<usize> {
+        match frame.planes {
+            Planes::Packed(data) => encode_packed(frame.geometry, data, quality, out),
+            Planes::Planar { .. } => Err(Error::Unsupported),
+        }
+    }
+
+    #[cfg(all(test, feature = "std"))]
+    mod tests {
+        use super::*;
+        use crate::jpeg::{find_eoi, probe};
+        use crate::source::{ImageSource, TestPattern};
+
+        #[test]
+        fn colour_bars_round_trip_through_the_house_decoder() {
+            let g = Geometry::new(96, 64, PixelFormat::Rgb888).unwrap();
+            let mut pattern = TestPattern::new(g, 10).unwrap();
+            let mut rgb = vec![0u8; g.byte_len().unwrap()];
+            let frame = pattern.grab(&mut rgb).unwrap();
+            let mut out = vec![0u8; max_bytes(&g)];
+            let n = encode_frame(&frame, 85, &mut out).unwrap();
+            let info = probe(&out[..n]).unwrap();
+            assert_eq!(info.geometry.width, 96);
+            assert_eq!(info.geometry.height, 64);
+            assert!(!info.progressive);
+            assert_eq!(find_eoi(&out[..n]), Some(n));
+            let mut d = rusty_jpeg::Decoder::new(&out[..n]);
+            let pixels = d.decode().unwrap();
+            let back = d.info().unwrap();
+            assert_eq!((back.width, back.height), (96, 64));
+            assert_eq!(pixels.len(), 96 * 64 * 3);
+            let err: u64 = pixels
+                .iter()
+                .zip(&rgb)
+                .map(|(&a, &b)| u64::from(a.abs_diff(b)))
+                .sum();
+            let mean = err / (96 * 64 * 3);
+            // colour bars are all hard edges: ringing puts the mean near 7 at q85
+            assert!(mean < 12, "mean abs error {mean}");
+        }
+
+        #[test]
+        fn yuyv_is_coded_as_delivered_and_the_luma_survives() {
+            let g = Geometry::new(64, 32, PixelFormat::Yuyv422).unwrap();
+            let mut yuyv = vec![0u8; g.byte_len().unwrap()];
+            for (i, px) in yuyv.chunks_exact_mut(4).enumerate() {
+                let y = ((i % 32) * 8) as u8;
+                px.copy_from_slice(&[y, 128, y, 128]);
+            }
+            let mut out = vec![0u8; max_bytes(&g)];
+            let n = encode_packed(g, &yuyv, 90, &mut out).unwrap();
+            assert_eq!(probe(&out[..n]).unwrap().geometry.width, 64);
+            let mut d = rusty_jpeg::Decoder::new(&out[..n]);
+            let pixels = d.decode().unwrap();
+            let info = d.info().unwrap();
+            assert_eq!((info.width, info.height), (64, 32));
+            // gray in, gray out: the decoder's green channel is the luma
+            let mut err = 0u64;
+            let mut count = 0u64;
+            for (px, y) in pixels
+                .chunks_exact(3)
+                .zip(yuyv.chunks_exact(2).map(|p| p[0]))
+            {
+                err += u64::from(px[1].abs_diff(y));
+                count += 1;
+            }
+            assert!(err / count < 8, "mean luma error {}", err / count);
+        }
+
+        #[test]
+        fn the_refusals_name_their_reason() {
+            let g = Geometry::new(64, 32, PixelFormat::Rgb888).unwrap();
+            let rgb = vec![90u8; g.byte_len().unwrap()];
+            let mut small = [0u8; 100];
+            assert_eq!(
+                encode_packed(g, &rgb, 80, &mut small),
+                Err(Error::BufferTooSmall {
+                    needed: max_bytes(&g)
+                })
+            );
+            let mut out = vec![0u8; max_bytes(&g)];
+            assert_eq!(
+                encode_packed(g, &rgb[..10], 80, &mut out),
+                Err(Error::InvalidGeometry)
+            );
+            let planar = Geometry::new(64, 32, PixelFormat::Yuv420p).unwrap();
+            assert_eq!(
+                encode_packed(planar, &rgb, 80, &mut out),
+                Err(Error::Unsupported)
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

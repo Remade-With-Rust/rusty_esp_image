@@ -60,3 +60,19 @@ names the parser and prints the input.
 | covered | result |
 |---|---|
 | `jpeg::probe`, `find_eoi`, `is_jpeg` (40 000: marker-biased random bytes and mutations of a minimal baseline JPEG) | no finding |
+
+## JPEG encoding on the chip: `jpeg::encode` over rusty_jpeg 0.4 (host, 2026-09-03)
+
+`rusty_jpeg` 0.4 is `no_std` + `alloc` with a caller-owned output
+(`SliceWriter`) and packed YUYV input, which is what a camera pipeline on a
+chip needed; `jpeg::encode` (feature `jpeg`) is the family's use of it: a
+raw frame (YUYV as delivered, RGB888/BGR888/RGBA8888, Gray8) into a buffer
+the caller sized with `max_bytes`, a baseline JPEG with the standard tables
+out.
+
+| gate | result |
+|---|---|
+| `cargo test --workspace --features rusty_esp_image-core/jpeg` | **18 pass** (3 new: colour bars round-trip through the house decoder with a mean error of 7 at quality 85 — the bars are all hard edges; a YUYV gray ramp coded as delivered comes back with its luma; the refusals name their reason: `BufferTooSmall { needed: max_bytes }`, `InvalidGeometry`, `Unsupported` for planar) |
+| `image-core --no-default-features --features jpeg` | riscv32imac, riscv32imafc and `xtensa-esp32s3-none-elf` (esp toolchain, `build-std=core,alloc`): pass |
+| `cargo clippy`, `cargo deny` | clean |
+| the probe's oracle (`real_jpegs_from_the_house_encoder`) on 0.4 | pass, unchanged |

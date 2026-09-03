@@ -798,9 +798,9 @@ dependencies = [
 
 [[package]]
 name = "rusty_jpeg"
-version = "0.3.3"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "383e8c8b54f0268005917db8d0a868d518f00aa723c140bc09d8bfd83f0c2949"
+checksum = "04b834f51d522e52dc7ad26fd6e157865f565eaf7f224a7a1a6d75ca617dd793"
 
 [[package]]
 name = "same-file"

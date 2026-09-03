@@ -38,7 +38,7 @@ XIAO ESP32-S3 Sense against esp32-camera 2.1.7 (`docs/LEDGER.md`). Not run
 on a sensor yet.
 
 Not yet: the board (I1's frame count), the DVP engine over `lcd_cam` (Track
-B, I2), MIPI-CSI on P4 (I4), and on-chip JPEG encoding via `rusty_jpeg` (I3,
+B, I2), MIPI-CSI on P4 (I4), and the P4 hardware JPEG codec (I3; the software encoder `jpeg::encode` over `rusty_jpeg` 0.4 is in since 2026-09-03,
 waiting on its `no_std` encoder).
 
 ## What is in the core
