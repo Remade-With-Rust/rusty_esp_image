@@ -47,3 +47,16 @@ the sensor has not been powered yet.
 
 - Frames per second, `empty_frames` and pool exhaustion on a XIAO ESP32-S3 Sense (I1; needs the board).
 - Kernel throughput per chip; the PIE ceiling probes (I5).
+
+## The no-panic gate (host, 2026-09-02)
+
+Every parser that takes bytes from a wire, a store or a bus must return an
+error on bad input, never panic — the house rule made a test:
+`tests/no_panic.rs` feeds each one random inputs from an LCG (the same corpus
+on every machine) and mutations of a valid encoding (bit flips, overwrites,
+truncation, extension, insertion, removal), under `catch_unwind` so a failure
+names the parser and prints the input.
+
+| covered | result |
+|---|---|
+| `jpeg::probe`, `find_eoi`, `is_jpeg` (40 000: marker-biased random bytes and mutations of a minimal baseline JPEG) | no finding |
