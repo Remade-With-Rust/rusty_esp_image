@@ -18,11 +18,12 @@ default = ["std"]
 # The feature ladder is the rusty_zstd one: `std` implies `alloc`; with neither,
 # the crate is pure `core` and still builds on riscv32 bare metal. Nothing in
 # this crate needs `alloc` today; the rungs exist so consumers compose.
-std = ["alloc", "rusty_esp_core/std"]
-alloc = ["rusty_esp_core/alloc"]
+std = ["alloc", "rusty_esp_core/std", "rusty_esp_dsp/std"]
+alloc = ["rusty_esp_core/alloc", "rusty_esp_dsp/alloc"]
 
 [dependencies]
 rusty_esp_core = { workspace = true }
+rusty_esp_dsp = { workspace = true }
 # The I2C trait SCCB rides on. 1.0 is the stable embedded-hal; no_std.
 embedded-hal = "1.0"
 
