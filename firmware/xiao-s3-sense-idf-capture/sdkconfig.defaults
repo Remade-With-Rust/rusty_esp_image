@@ -1,0 +1,27 @@
+# XIAO ESP32-S3 Sense: 8 MB flash, 8 MB octal PSRAM.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# The camera's frame buffers live here (see IdfCamera::init), and the pool
+# sizes this firmware sweeps are pools of these.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
+
+# Rust std on ESP-IDF wants a roomy main task; the capture loop runs on it.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=24000
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
+
+CONFIG_FREERTOS_HZ=1000
+# The dump prints tens of thousands of console lines between watchdog feeds.
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=60
+
+# No networking here on purpose: this firmware measures the camera, and a
+# radio would only add a variable. The J1 firmware in rusty_esp_video is the
+# one that streams.
+
+# Camera driver: frame buffers live in PSRAM (see IdfCamera::init).
+CONFIG_CAMERA_CORE0=y

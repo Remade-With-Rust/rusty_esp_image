@@ -33,13 +33,43 @@ use rusty_esp_image_core::source::ImageSource;
 
 use crate::CameraPins;
 
+/// What the driver did, counted rather than timed.
+///
+/// Every field counts an event the driver reported, so these are exact and
+/// reproducible on any board; a frame rate derived from them and one clock is
+/// confirmation, not the primary evidence.
+///
+/// The three failure counts are kept apart because they mean different
+/// things, and the I1 row needs to tell them apart: [`no_frame`] is the
+/// driver having nothing to hand over, which is what exhausting the frame
+/// buffer pool looks like from this side; [`empty_frames`] is a buffer that
+/// arrived carrying nothing; [`too_small`] is the caller's slot being short.
+/// Folding them into one number, as this type's predecessor did, makes a
+/// starved pool indistinguishable from a broken sensor.
+///
+/// [`no_frame`]: CaptureStats::no_frame
+/// [`empty_frames`]: CaptureStats::empty_frames
+/// [`too_small`]: CaptureStats::too_small
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CaptureStats {
+    /// Frames handed to the caller.
+    pub frames: u64,
+    /// Bytes copied out across those frames.
+    pub bytes: u64,
+    /// `esp_camera_fb_get` returned null: no buffer was available.
+    pub no_frame: u64,
+    /// A buffer arrived with a length of zero or a null pointer.
+    pub empty_frames: u64,
+    /// A frame did not fit the caller's slot and was dropped.
+    pub too_small: u64,
+}
+
 /// A running esp32-camera instance.
 #[derive(Debug)]
 pub struct IdfCamera {
     geometry: Geometry,
     sequence: u32,
-    /// Frames the driver returned with a length of zero or a null buffer.
-    pub empty_frames: u64,
+    stats: CaptureStats,
 }
 
 /// Map a JPEG geometry onto esp32-camera's `framesize_t`.
@@ -116,8 +146,13 @@ impl IdfCamera {
         Ok(IdfCamera {
             geometry: mode.geometry,
             sequence: 0,
-            empty_frames: 0,
+            stats: CaptureStats::default(),
         })
+    }
+
+    /// What the driver has done since `init`.
+    pub fn stats(&self) -> CaptureStats {
+        self.stats
     }
 
     /// Set the sensor's vertical flip and horizontal mirror.
@@ -162,17 +197,22 @@ impl ImageSource for IdfCamera {
         // on every path before touching the driver again.
         let fb = unsafe { sys::esp_camera_fb_get() };
         if fb.is_null() {
+            // The driver had no completed frame to give. With `fb_count`
+            // buffers all held or still filling, this is what the pool
+            // running dry looks like from the caller's side.
+            self.stats.no_frame += 1;
             return Err(Error::Timeout);
         }
         // SAFETY: `fb` is non-null and valid until returned.
         let (len, ptr, ts) = unsafe { ((*fb).len, (*fb).buf, (*fb).timestamp) };
         if len == 0 || ptr.is_null() {
-            self.empty_frames += 1;
+            self.stats.empty_frames += 1;
             // SAFETY: returning the buffer we were handed.
             unsafe { sys::esp_camera_fb_return(fb) };
             return Err(Error::Hardware);
         }
         if out.len() < len {
+            self.stats.too_small += 1;
             // SAFETY: as above.
             unsafe { sys::esp_camera_fb_return(fb) };
             return Err(Error::BufferTooSmall { needed: len });
@@ -183,6 +223,8 @@ impl ImageSource for IdfCamera {
         unsafe { core::ptr::copy_nonoverlapping(ptr, out.as_mut_ptr(), len) };
         // SAFETY: returning the buffer we were handed.
         unsafe { sys::esp_camera_fb_return(fb) };
+        self.stats.frames += 1;
+        self.stats.bytes += len as u64;
         let micros = Micros((ts.tv_sec as u64) * 1_000_000 + (ts.tv_usec as u64));
         let seq = self.sequence;
         self.sequence = self.sequence.wrapping_add(1);
