@@ -1,89 +1,99 @@
 # rusty_esp_image
 
-[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![Remade With Rust](https://img.shields.io/badge/Remade%20With-Rust-000?logo=rust&logoColor=fff)](https://github.com/remade-with-rust) [![By Mata Network](https://img.shields.io/badge/by-Mata%20Network-5b2be0)](https://www.mata.network) [![crates.io](https://img.shields.io/crates/v/rusty_esp_image.svg)](https://crates.io/crates/rusty_esp_image) [![docs.rs](https://docs.rs/rusty_esp_image/badge.svg)](https://docs.rs/rusty_esp_image) [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](https://github.com/Remade-With-Rust/rusty_esp_image/blob/main/LICENSE-MIT)
 
-esp32-camera and Espressif's JPEG components remade in Rust: sensor bring-up
-as **data**, DMA frame pools that never allocate, pixel kernels with scalar
-oracles, a JPEG header probe, and SCCB register access over `embedded-hal` —
-so a camera on an ESP32 hands a validated, borrowed frame to whoever asks for
-one.
+Cameras for the **Janus** ESP32 family: sensor bring-up over the two-wire
+control bus, a frame pool that hands out borrowed views, JPEG probing and
+encoding, and a deterministic test pattern so a pipeline can be exercised with
+no camera attached. Pure Rust, no C, no FFI, `no_std` by default.
 
-Part of **Janus**, the Remade-With-Rust programme that rebuilds the Espressif
-ESP32 and Arduino application portfolio in memory-safe Rust for the MATA home
-computer.
+* **A picture, on a five-dollar board.** A generated firmware brings up an
+  OV2640, mints an identity nobody can reach, and serves a gated camera page —
+  verified on two different boards, one of them provisioned entirely over
+  Bluetooth from a browser.
+* **The frame pool does not lie about exhaustion.** Measured on the chip across
+  581 captures, including runs where the pool was starved on purpose: **every
+  failure counter reads zero.** The driver does not report running out of
+  buffers — it waits, silently, and the only trace is a lower frame rate. A
+  firmware watching that counter would watch forever.
+* **Sensor tables as data, not code.** Register sequences for the OV2640 and
+  OV5640 converted from the vendor's own headers — 216 steps for the OV5640's
+  nine tables including gamma and white balance — each replayed through the
+  control bus with the delays the datasheet asks for.
+* **JPEG in and out** through [`rusty_jpeg`](https://crates.io/crates/rusty_jpeg):
+  probe width, height, components and the progressive flag from a header;
+  trim the trailing DMA padding to the end marker; encode on the chip.
 
-- This package's plan: [docs/plans/rusty_esp_image.md](docs/plans/rusty_esp_image.md)
-- Numbers: [docs/LEDGER.md](docs/LEDGER.md)
-- Third-party data: [LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md)
-- The family plan: Janus `docs/plans/janus-mission.md` (umbrella repo)
+## What has run on hardware
 
-**Claims discipline:** every number in this README is in the ledger with the
-run that produced it. Nothing here has run on a chip yet.
-
-## Status
-
-**I0 shipped on the host (2026-09-01).** The core has everything a capture
-driver needs *above* the DMA engine: the `ImageSource` seam, a caller-owned
-`FramePool`, a JPEG header probe verified against the house encoder, pixel
-kernels with test vectors, the OV2640 and OV5640 register tables as data
-(derived mechanically from esp32-camera, Apache-2.0, attributed), sensor
-descriptors, and SCCB register access. 17 tests pass; the core compiles for
-riscv32 bare metal with and without `alloc`.
-
-**J1 host half (2026-09-01):** `rusty_esp_image-esp::idf::IdfCamera` — the
-Track A capture backend over esp32-camera — and the XIAO ESP32-S3 Sense and
-AI-Thinker pin maps are written; the firmware that links them lives in
-`rusty_esp_video/firmware/xiao-s3-sense-idf-mjpeg` and **builds** for the
-XIAO ESP32-S3 Sense against esp32-camera 2.1.7 (`docs/LEDGER.md`). Not run
-on a sensor yet.
-
-Not yet: the board (I1's frame count), the DVP engine over `lcd_cam` (Track
-B, I2), MIPI-CSI on P4 (I4), and the P4 hardware JPEG codec (I3; the software encoder `jpeg::encode` over `rusty_jpeg` 0.4 is in since 2026-09-03,
-waiting on its `no_std` encoder).
-
-## What is in the core
-
-| Module | What |
+| what | measured |
 |---|---|
-| `source` | `ImageSource`: `geometry()` and `grab(out) -> Frame` into caller memory; `TestPattern` colour bars for host and smoke tests |
-| `pool` | `FramePool<N>`: N equal slots over one buffer, acquire / fill / commit / frame / release, never blocks, never allocates |
-| `jpeg` | `probe`: width, height, precision, components, progressive flag from the SOF segment, no decode; `find_eoi` trims DMA padding |
-| `ops` | RGB565 ↔ RGB888, YUYV → RGB888 / RGB565 / Gray8, 2× box downscale (gray, RGB565), crop, rotate 90° and 180° — scalar, the oracles for any PIE twin |
-| `sensor` | `SensorId` (18 parts, product ids), `SensorDesc` (OV2640, OV5640, OV3660, OV7670), `FrameSize`, `Mode`, `RegOp`; `ov2640` (302 steps) and `ov5640` (216 steps) register tables |
-| `sccb` | `Sccb<I2c>`: 8/16-bit register read and write, `apply` a table with delay steps, `probe` a product id |
+| frame buffers, fast consumer | one buffer **13.882 fps**, two **27.764 fps**, three **27.764 fps** |
+| the second buffer | costs exactly half the frame rate to omit — a factor of **2.000003** from the raw counts, because the driver cannot fill the next frame while the caller holds the current one |
+| the third buffer | **buys nothing**: two and three produced the same frame count over elapsed times less than one part in a million apart |
+| pool exhaustion | **0 failures in all six runs, 581 captures**, including deliberately starved ones |
+| frames off the board | decoded by an outside tool, three of three, three distinct checksums |
+
+The firmware generator already asks for two buffers. This is the measurement
+that says it was right to, and the third column is why the roadmap stopped
+listing pool exhaustion as a quantity to count.
+
+Every number, with the run that produced it:
+[`docs/LEDGER.md`](https://github.com/Remade-With-Rust/rusty_esp_image/blob/main/docs/LEDGER.md).
+
+## Using it
 
 ```rust
 use rusty_esp_image::prelude::*;
 
-// a DMA ring in user clothes: two slots over one static buffer
-static mut RING: [u8; 2 * 64 * 1024] = [0; 2 * 64 * 1024];
-let mut pool: FramePool<'_, 2> = FramePool::new(ring)?;
-let slot = pool.acquire().ok_or(Error::Busy)?;
-let n = camera.grab_into(pool.slot_mut(slot)?)?;        // the -esp backend fills it
-pool.commit(slot, n)?;
-let info = probe(pool.slot(slot)?)?;                    // geometry from the JPEG header
-let frame = pool.frame(slot, info.geometry, clock.now(), seq)?;
+let mut camera = IdfCamera::new(XIAO_ESP32S3_SENSE, Mode::new(FrameSize::Qvga, 12))?;
+// The pool owns the memory; a grab hands back a borrowed view of it.
+if let Some(frame) = camera.grab()? {
+    let info = jpeg::probe(frame.bytes())?;      // width, height, components
+    let clean = jpeg::find_eoi(frame.bytes());   // trim trailing DMA padding
+}
 ```
 
-## Layout
+## Two tracks
 
-```text
-crates/rusty_esp_image          facade
-crates/rusty_esp_image-core     no_std + alloc; forbid(unsafe); the core above
-crates/rusty_esp_image-esp      the WRAP crate: `esp-hal` | `esp-idf` capture engines (I1)
-docs/plans/rusty_esp_image.md   the plan · docs/LEDGER.md the numbers
-LICENSE-THIRD-PARTY.md          provenance of the register tables
-```
+| track | what it is | this crate |
+|---|---|---|
+| **A** | `std` on ESP-IDF — the camera driver, the frame pool, JPEG | `rusty_esp_image-esp --features esp-idf` |
+| **B** | `no_std` on `esp-hal` | `rusty_esp_image-core`, default |
 
-## Build
+## Part of Janus
 
-```sh
-cargo test --workspace
-cargo check -p rusty_esp_image-core --no-default-features --target riscv32imac-unknown-none-elf
-cargo check -p rusty_esp_image-core --no-default-features --features alloc --target riscv32imac-unknown-none-elf
-```
+**Janus** rebuilds the Espressif ESP32 and Arduino application portfolio as
+independent, memory-safe Rust packages — so a hardware maker can ship a device
+that the [MATA](https://www.mata.network) home computer discovers, catalogs honestly, adopts
+under its own identity, and pays for. Ten packages, three layers, and the
+dependency direction never reverses.
+
+| layer | packages |
+|---|---|
+| **0 — the vocabulary** | [`rusty_esp_core`](https://crates.io/crates/rusty_esp_core) · [`rusty_esp_dsp`](https://crates.io/crates/rusty_esp_dsp) |
+| **1 — the functions** | [`rusty_esp_image`](https://crates.io/crates/rusty_esp_image) · [`rusty_esp_video`](https://crates.io/crates/rusty_esp_video) · [`rusty_esp_audio`](https://crates.io/crates/rusty_esp_audio) · [`rusty_esp_signal`](https://crates.io/crates/rusty_esp_signal) · [`rusty_esp_mid`](https://crates.io/crates/rusty_esp_mid) · [`rusty_esp_iroh`](https://crates.io/crates/rusty_esp_iroh) |
+| **2 — the surfaces** | [`rusty_esp_arduino`](https://crates.io/crates/rusty_esp_arduino) — the sketch facade · [`espino`](https://crates.io/crates/espino) — the maker's CLI |
+
+Every package is host-verified against an external oracle and keeps a ledger
+in which no number appears without the run that produced it. **Five of seven
+device profiles have now run their kill tests on real silicon**, three of them
+over a Wi-Fi network the board hosts itself.
+
+Also check out the rest of [Remade With Rust](https://github.com/remade-with-rust) — including
+[`rusty_alloc`](https://crates.io/crates/rusty_alloc), the pure-Rust rebuild of
+mimalloc that these firmwares run on, and
+[`rusty_jpeg`](https://crates.io/crates/rusty_jpeg), the JPEG engine behind the
+camera path — and our sister project
+[remade_ffmpeg_rs](https://github.com/Remade-With-Rust/remade_ffmpeg_rs), a ground-up Rust rebuild of FFmpeg.
+
+## About Mata Network
+
+[Mata Network](https://www.mata.network) builds sovereign, self-hostable infrastructure.
+**Remade With Rust** is our open-source home for the permissively-licensed
+building blocks that work depends on.
 
 ## License
 
-MIT OR Apache-2.0, at your option. The sensor register tables are derived
-from Apache-2.0 material; see `LICENSE-THIRD-PARTY.md`.
+MIT OR Apache-2.0, at your option. See [LICENSE-MIT](https://github.com/Remade-With-Rust/rusty_esp_image/blob/main/LICENSE-MIT)
+and [LICENSE-APACHE](https://github.com/Remade-With-Rust/rusty_esp_image/blob/main/LICENSE-APACHE).
