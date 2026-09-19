@@ -109,6 +109,14 @@ fn read_u16(bytes: &[u8], at: usize) -> Result<u16> {
 /// found.
 #[must_use]
 pub fn find_eoi(bytes: &[u8]) -> Option<usize> {
+    // Two shapes were tried here on an ESP32-S3 (2026-09-19) and NEITHER beat
+    // this one, so it stands unchanged:
+    //   `bytes.windows(2).rposition(..)`  +35.7%  -- building a two-element
+    //       slice per position costs more than the second load it saves;
+    //   carrying the previous byte in a local, one load per position instead
+    //       of two: 175 274 vs 175 258 ps/byte, i.e. FLAT. The second load is
+    //       an L1 hit on a line already resident, so removing it buys nothing.
+    // Reverted as "inside the noise", not as "measured worse".
     if bytes.len() < 2 {
         return None;
     }
