@@ -104,9 +104,20 @@ impl IdfCamera {
     /// Initialise the driver for `mode` (JPEG only in J1) with `fb_count`
     /// driver-side frame buffers in PSRAM and a 20 MHz XCLK.
     pub fn init(pins: &CameraPins, mode: &Mode, fb_count: u8) -> Result<Self> {
-        if mode.geometry.format != PixelFormat::Jpeg {
-            return Err(Error::Unsupported);
-        }
+        // The sensor can deliver more than JPEG, and `grab` below is already
+        // format-agnostic -- it copies `len` bytes and stamps `self.geometry`
+        // on them. Only this gate was JPEG-only, which is why every pixel
+        // kernel in the family had no production caller (dsp ledger R1): a
+        // camera that can only emit JPEG is a camera whose bytes are never
+        // read.
+        let pixel_format = match mode.geometry.format {
+            PixelFormat::Jpeg => sys::pixformat_t_PIXFORMAT_JPEG,
+            PixelFormat::Rgb565 => sys::pixformat_t_PIXFORMAT_RGB565,
+            PixelFormat::Yuyv422 => sys::pixformat_t_PIXFORMAT_YUV422,
+            PixelFormat::Gray8 => sys::pixformat_t_PIXFORMAT_GRAYSCALE,
+            // Anything else is not something this sensor family emits.
+            _ => return Err(Error::Unsupported),
+        };
         let frame_size = framesize_for(&mode.geometry)?;
         // SAFETY: `camera_config_t` is a plain-old-data C struct for which
         // all-zero bytes is a valid (if useless) value; every field the driver
@@ -131,7 +142,7 @@ impl IdfCamera {
         cfg.xclk_freq_hz = 20_000_000;
         cfg.ledc_timer = sys::ledc_timer_t_LEDC_TIMER_0;
         cfg.ledc_channel = sys::ledc_channel_t_LEDC_CHANNEL_0;
-        cfg.pixel_format = sys::pixformat_t_PIXFORMAT_JPEG;
+        cfg.pixel_format = pixel_format;
         cfg.frame_size = frame_size;
         cfg.jpeg_quality = c_int::from(mode.jpeg_quality);
         cfg.fb_count = usize::from(fb_count.max(1));

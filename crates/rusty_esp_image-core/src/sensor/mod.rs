@@ -344,6 +344,30 @@ impl Mode {
         })
     }
 
+    /// An uncompressed mode at `size`: what a pipeline that reads pixels
+    /// asks for.
+    ///
+    /// `jpeg()` was the only constructor, which is a large part of why every
+    /// pixel kernel in this family had no production caller (see the
+    /// reachability census, `rusty_esp_dsp` ledger R1): a camera that can
+    /// only be asked for JPEG produces bytes nobody converts, downscales or
+    /// filters. RGB565, YUYV422 and Gray8 are what the OV2640/OV5640 emit
+    /// besides JPEG; anything else is rejected by `Geometry`.
+    pub fn raw(size: FrameSize, format: PixelFormat) -> Result<Self> {
+        match format {
+            PixelFormat::Rgb565 | PixelFormat::Yuyv422 | PixelFormat::Gray8 => {}
+            _ => return Err(Error::Unsupported),
+        }
+        Ok(Mode {
+            geometry: size.geometry(format)?,
+            fps: 0,
+            // Not read for an uncompressed format; the driver ignores it.
+            jpeg_quality: 12,
+            flip: false,
+            mirror: false,
+        })
+    }
+
     /// Check the mode against a sensor's limits.
     pub fn check(&self, desc: &SensorDesc) -> Result<()> {
         if self.geometry.width > desc.max_width || self.geometry.height > desc.max_height {
