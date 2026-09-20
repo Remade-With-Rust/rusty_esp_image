@@ -14,6 +14,27 @@ hardware results, the method lines and the open defects live in that package's
 [`docs/LEDGER.md`](https://github.com/Remade-With-Rust/rusty_esp_image/blob/main/docs/LEDGER.md), where no number
 appears without the run that produced it.
 
+## On an ESP32-S3
+
+Turn on `pie-s3` and `rotate90_gray8` runs the chip's 128-bit vector twin —
+**201,137 → 12,329 picoseconds per pixel, −93.9%** on a Seeed XIAO ESP32-S3
+Sense, gated byte-identical against the tiled scalar loop that stays in the
+tree.
+
+```toml
+rusty_esp_image-core = { version = "0.1", features = ["pie-s3"] }
+```
+
+The rotate is an 8x8 byte transpose in eight `ee.vzip` instructions, and the
+destination column's reversal costs nothing: loading each tile's source rows
+bottom-to-top emits the transposed bytes in the order the destination run
+already wants. It takes only `w % 8 == 0`, `h % 8 == 0` and 16-byte aligned
+buffers, and declines to the scalar loop otherwise.
+
+`rotate180` has no twin and will not get one: reversing bytes complements the
+lane index, and this unit's `zip`/`unzip` only rotate it. `crop` needs none —
+it is already `copy_from_slice` per row.
+
 ## Part of Janus
 
 **Janus** rebuilds the Espressif ESP32 and Arduino application portfolio as
