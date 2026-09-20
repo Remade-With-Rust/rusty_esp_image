@@ -69,6 +69,15 @@ pub fn rotate90_gray8(src: &[u8], width: u32, height: u32, dst: &mut [u8]) -> Re
     if w != 0 && h != 0 {
         let dst = &mut dst[..w * h];
         let src = &src[..w * h];
+        // CHIP ARM: an 8x8 byte transpose in eight `ee.vzip` instructions,
+        // with the destination column's reversal absorbed by loading each
+        // tile's source rows bottom-to-top. It takes only `w % 8 == 0`,
+        // `h % 8 == 0` and both bases 16-byte aligned -- which is what makes
+        // every 64-bit access it issues 8-byte aligned -- and declines
+        // otherwise, leaving the tiled loop below.
+        if pie::rotate90_gray8(src, width, height, dst) {
+            return Geometry::new(height, width, PixelFormat::Gray8);
+        }
         // A transpose cannot make both sides sequential, so TILE it and make
         // both sides local instead. Walking whole rows stores every pixel of
         // a row to a different destination line: the line is fetched, one
@@ -184,5 +193,22 @@ mod tests {
         let mut r2 = [0u8; 6];
         rotate180(&[1, 2, 3, 4, 5, 6], 2, &mut r2).unwrap();
         assert_eq!(r2, [5, 6, 3, 4, 1, 2]);
+    }
+}
+
+/// The chip twin of [`rotate90_gray8`], and its off-chip stand-in.
+///
+/// Both arms exist so the caller's scalar loop is never dead code: with
+/// `pie-s3` off, or on a target that is not an ESP32-S3, the helper declines
+/// from a const-foldable body.
+mod pie {
+    #[cfg(all(feature = "pie-s3", target_arch = "xtensa"))]
+    pub fn rotate90_gray8(src: &[u8], width: u32, height: u32, dst: &mut [u8]) -> bool {
+        rusty_esp_dsp_esp::pie_s3::rotate90_gray8(src, width, height, dst).is_ok()
+    }
+
+    #[cfg(not(all(feature = "pie-s3", target_arch = "xtensa")))]
+    pub fn rotate90_gray8(_: &[u8], _: u32, _: u32, _: &mut [u8]) -> bool {
+        false
     }
 }

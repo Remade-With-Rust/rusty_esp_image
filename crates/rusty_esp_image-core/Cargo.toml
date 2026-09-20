@@ -20,6 +20,10 @@ default = ["std"]
 # this crate needs `alloc` today; the rungs exist so consumers compose.
 std = ["alloc", "rusty_esp_core/std", "rusty_esp_dsp/std"]
 alloc = ["rusty_esp_core/alloc", "rusty_esp_dsp/alloc"]
+# Run the ESP32-S3 PIE twins where one exists. Correctness is unchanged:
+# every twin is gated byte-identical against the scalar it replaces, and
+# off-chip the twins ARE that scalar.
+pie-s3 = ["dep:rusty_esp_dsp-esp", "rusty_esp_dsp-esp/pie-s3"]
 # JPEG encoding on the chip through `rusty_jpeg` 0.4 (`no_std` + `alloc`):
 # `jpeg::encode`. Off by default so a probe-only consumer carries no codec.
 jpeg = ["alloc", "dep:rusty_jpeg"]
@@ -27,6 +31,7 @@ jpeg = ["alloc", "dep:rusty_jpeg"]
 [dependencies]
 rusty_esp_core = { workspace = true }
 rusty_esp_dsp = { workspace = true }
+rusty_esp_dsp-esp = { workspace = true, optional = true }
 # The I2C trait SCCB rides on. 1.0 is the stable embedded-hal; no_std.
 embedded-hal = "1.0"
 # The house JPEG codec with no default features (no `std`, no SIMD): the

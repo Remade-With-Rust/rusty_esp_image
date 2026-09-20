@@ -771,6 +771,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusty_esp_dsp-esp"
+version = "0.1.0"
+source = "git+https://github.com/Remade-With-Rust/rusty_esp_dsp#4d28381fdfd8de1718f9ed28a28485bfd65e9209"
+dependencies = [
+ "rusty_esp_core",
+ "rusty_esp_dsp",
+]
+
+[[package]]
 name = "rusty_esp_image"
 version = "0.1.0"
 dependencies = [
@@ -785,6 +794,7 @@ dependencies = [
  "embedded-hal",
  "rusty_esp_core",
  "rusty_esp_dsp",
+ "rusty_esp_dsp-esp",
  "rusty_jpeg",
 ]
 

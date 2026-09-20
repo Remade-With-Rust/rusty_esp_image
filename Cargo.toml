@@ -33,6 +33,8 @@ rusty_esp_image-esp = { path = "crates/rusty_esp_image-esp", version = "0.1.0", 
 # URL to the sibling checkout, so local edits are visible without a push.
 rusty_esp_core = { version = "0.1", git = "https://github.com/Remade-With-Rust/rusty_esp_core", default-features = false }
 rusty_esp_dsp = { version = "0.1", git = "https://github.com/Remade-With-Rust/rusty_esp_dsp", default-features = false }
+# The chip half of the kernel home; see the `pie-s3` feature below.
+rusty_esp_dsp-esp = { version = "0.1", git = "https://github.com/Remade-With-Rust/rusty_esp_dsp", default-features = false }
 
 [profile.release]
 lto = "thin"
