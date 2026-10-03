@@ -13,6 +13,7 @@
 //! | [`ops`] | pixel kernels (RGB565 ↔ RGB888, YUYV → RGB/gray, 2× downscale, crop, rotate) — scalar, tested; the oracles for any later PIE twin |
 //! | [`sensor`] | sensor identity and register tables **as data** (`SensorDesc`, `Register`, the OV2640 / OV5640 tables derived from esp32-camera) |
 //! | [`sccb`] | [`Sccb`] — the camera control bus (I²C without repeated start) over `embedded-hal` 1.0 |
+//! | [`driver`] | the sensor state machines esp32-camera's C drivers encode — [`driver::Ov3660`], [`driver::Ov2640`] — over the tables and the bus, every write listable on the host |
 //!
 //! Rules (from the package plan): every buffer is caller-owned; nothing here
 //! allocates on a hot path; `forbid(unsafe)`; the scalar path is the oracle.
@@ -23,6 +24,8 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+pub mod cut;
+pub mod driver;
 pub mod jpeg;
 pub mod ops;
 pub mod pool;

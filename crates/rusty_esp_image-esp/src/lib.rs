@@ -93,6 +93,4 @@ pub const AI_THINKER_ESP32_CAM: CameraPins = CameraPins {
 pub mod idf;
 
 #[cfg(feature = "esp-hal")]
-pub mod hal {
-    //! Track B backends. The DVP engine over `esp_hal::lcd_cam::cam` lands here.
-}
+pub mod hal;

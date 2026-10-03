@@ -22,13 +22,20 @@ alloc = ["rusty_esp_image-core/alloc"]
 # `[package.metadata.esp-idf-sys]` with `bindings_module = "camera"`
 # (see firmware/xiao-s3-sense-idf-mjpeg in rusty_esp_video).
 esp-idf = ["std", "dep:esp-idf-sys"]
-# Track B — bare metal: the DVP engine over esp-hal `lcd_cam::cam` lands here
-# with its esp-hal pin.
-esp-hal = ["alloc"]
+# Track B — bare metal: `hal::DvpCamera`, the DVP engine over esp-hal's
+# `lcd_cam::cam` and GDMA. The chip is chosen by the firmware.
+esp-hal = ["alloc", "dep:esp-hal", "dep:esp32s3"]
 
 [dependencies]
 rusty_esp_image-core = { workspace = true }
 esp-idf-sys = { version = "0.37", optional = true }
+# Caret, not `=`: the firmware pins the companion set (esp-hal 1.2.0 today)
+# and selects the chip. `unstable` is where `lcd_cam` and the DMA buffers live.
+esp-hal = { version = "1.2", default-features = false, features = ["unstable"], optional = true }
+# The S3's register map: the LCD_CAM camera's stop-on-EOF bit, which esp-hal
+# sets on every `receive` and a streaming engine needs clear. The S3 is the
+# one chip with this peripheral in the family; a second would gate this.
+esp32s3 = { version = "0.35", optional = true }
 
 [lints]
 workspace = true

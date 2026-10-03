@@ -11,6 +11,7 @@
 //! terminators dropped, nothing else changed.
 
 pub mod ov2640;
+pub mod ov3660;
 pub mod ov5640;
 
 use rusty_esp_core::error::{Error, Result};
@@ -281,7 +282,119 @@ pub enum FrameSize {
     S5mp,
 }
 
+/// The aspect ratios esp32-camera's resolution table names, in its order —
+/// the index into a sensor's ratio table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AspectRatio {
+    /// 4:3.
+    R4x3,
+    /// 3:2.
+    R3x2,
+    /// 16:10.
+    R16x10,
+    /// 5:3.
+    R5x3,
+    /// 16:9.
+    R16x9,
+    /// 21:9.
+    R21x9,
+    /// 5:4.
+    R5x4,
+    /// 1:1.
+    R1x1,
+    /// 9:16.
+    R9x16,
+}
+
+/// Every named size, in esp32-camera's order.
+const ALL_SIZES: &[FrameSize] = &[
+    FrameSize::S96x96,
+    FrameSize::Qqvga,
+    FrameSize::S128x128,
+    FrameSize::Qcif,
+    FrameSize::Hqvga,
+    FrameSize::S240x240,
+    FrameSize::Qvga,
+    FrameSize::S320x320,
+    FrameSize::Cif,
+    FrameSize::Hvga,
+    FrameSize::Vga,
+    FrameSize::Svga,
+    FrameSize::Xga,
+    FrameSize::Hd,
+    FrameSize::Sxga,
+    FrameSize::Uxga,
+    FrameSize::Fhd,
+    FrameSize::Qxga,
+    FrameSize::Qhd,
+    FrameSize::Qsxga,
+    FrameSize::S5mp,
+];
+
 impl FrameSize {
+    /// The frame size with exactly these dimensions, if one is named.
+    #[must_use]
+    pub fn from_dimensions(width: u32, height: u32) -> Option<FrameSize> {
+        ALL_SIZES
+            .iter()
+            .copied()
+            .find(|s| s.dimensions() == (width, height))
+    }
+
+    /// The aspect ratio esp32-camera's resolution table gives this size,
+    /// which picks the sensor window a driver programs.
+    #[must_use]
+    pub const fn aspect_ratio(self) -> AspectRatio {
+        match self {
+            FrameSize::S96x96 | FrameSize::S128x128 | FrameSize::S240x240 | FrameSize::S320x320 => {
+                AspectRatio::R1x1
+            }
+            FrameSize::Qcif | FrameSize::Sxga => AspectRatio::R5x4,
+            FrameSize::Hvga => AspectRatio::R3x2,
+            FrameSize::Hd | FrameSize::Fhd | FrameSize::Qhd => AspectRatio::R16x9,
+            FrameSize::Qqvga
+            | FrameSize::Hqvga
+            | FrameSize::Qvga
+            | FrameSize::Cif
+            | FrameSize::Vga
+            | FrameSize::Svga
+            | FrameSize::Xga
+            | FrameSize::Uxga
+            | FrameSize::Qxga
+            | FrameSize::Qsxga
+            | FrameSize::S5mp => AspectRatio::R4x3,
+        }
+    }
+
+    /// esp32-camera's `framesize_t` ordinal: the drivers compare sizes by
+    /// it ("larger than HVGA", "at least QVGA") to pick a clock.
+    #[must_use]
+    pub const fn ordinal(self) -> u8 {
+        match self {
+            FrameSize::S96x96 => 0,
+            FrameSize::Qqvga => 1,
+            FrameSize::S128x128 => 2,
+            FrameSize::Qcif => 3,
+            FrameSize::Hqvga => 4,
+            FrameSize::S240x240 => 5,
+            FrameSize::Qvga => 6,
+            FrameSize::S320x320 => 7,
+            FrameSize::Cif => 8,
+            FrameSize::Hvga => 9,
+            FrameSize::Vga => 10,
+            FrameSize::Svga => 11,
+            FrameSize::Xga => 12,
+            FrameSize::Hd => 13,
+            FrameSize::Sxga => 14,
+            FrameSize::Uxga => 15,
+            FrameSize::Fhd => 16,
+            FrameSize::Qxga => 19,
+            FrameSize::Qhd => 20,
+            FrameSize::Qsxga => 23,
+            FrameSize::S5mp => 24,
+        }
+    }
+
     /// Width and height.
     #[must_use]
     pub const fn dimensions(self) -> (u32, u32) {

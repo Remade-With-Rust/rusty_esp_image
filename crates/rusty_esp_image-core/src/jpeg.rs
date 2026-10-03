@@ -130,6 +130,104 @@ pub fn find_eoi(bytes: &[u8]) -> Option<usize> {
     None
 }
 
+/// The end of the **first** image in `bytes`: the offset just past its EOI
+/// marker, found by walking the marker segments from SOI to the start of
+/// scan and then the entropy-coded data, where `FF` is followed only by
+/// `00` (a stuffed byte), a restart marker, or the marker that ends the
+/// scan. A sensor in JPEG mode over DVP fills the rest of its frame after
+/// the image — the OV3660 repeats the whole image in fixed blocks up to
+/// VSYNC — so the last `FF D9` in a DMA buffer is not the frame's end;
+/// this is. `None` when `bytes` does not start with SOI or the scan never
+/// ends.
+#[must_use]
+pub fn find_first_eoi(bytes: &[u8]) -> Option<usize> {
+    if bytes.len() < 4 || bytes[0] != 0xFF || bytes[1] != SOI {
+        return None;
+    }
+    let mut i = 2usize;
+    // the marker segments up to the first start of scan
+    loop {
+        if i + 4 > bytes.len() || bytes[i] != 0xFF {
+            return None;
+        }
+        let marker = bytes[i + 1];
+        match marker {
+            0xFF => {
+                // fill bytes before a marker
+                i += 1;
+                continue;
+            }
+            0xD8 | 0xD0..=0xD7 | 0x01 => {
+                i += 2;
+                continue;
+            }
+            EOI => return Some(i + 2),
+            0xDA => {
+                let len = usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
+                i += 2 + len;
+                break;
+            }
+            _ => {
+                let len = usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
+                i += 2 + len;
+            }
+        }
+    }
+    // the entropy-coded data: `FF 00` and `FF D0..D7` are data, anything
+    // else after `FF` is a marker, and the first EOI ends the image
+    while i + 1 < bytes.len() {
+        // most of a picture is entropy bytes with no `FF` among them: step
+        // over eight at a time while their maximum says none is `FF` (the
+        // per-byte loop below would only have stepped over them one by one)
+        i = skip_no_ff(bytes, i);
+        if i + 1 >= bytes.len() {
+            break;
+        }
+        if bytes[i] == 0xFF {
+            match bytes[i + 1] {
+                0x00 | 0xD0..=0xD7 | 0xFF => {}
+                EOI => return Some(i + 2),
+                0xDA => {
+                    // another scan (progressive): skip its header and go on
+                    if i + 4 > bytes.len() {
+                        return None;
+                    }
+                    let len = usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
+                    i += 2 + len;
+                    continue;
+                }
+                _ => {
+                    if i + 4 > bytes.len() {
+                        return None;
+                    }
+                    let len = usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
+                    i += 2 + len;
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The first index at or after `i` that may hold `FF`: whole runs of eight
+/// bytes without one are stepped over (their unsigned maximum is below
+/// `FF`). The rest is left to the caller's per-byte loop.
+pub(crate) fn skip_no_ff(bytes: &[u8], mut i: usize) -> usize {
+    while let Some(w) = bytes.get(i..i + 8) {
+        let m = w[0]
+            .max(w[1])
+            .max(w[2].max(w[3]))
+            .max(w[4].max(w[5]).max(w[6].max(w[7])));
+        if m == 0xFF {
+            break;
+        }
+        i += 8;
+    }
+    i
+}
+
 /// JPEG encoding on the chip: a raw frame into a caller-owned buffer through
 /// `rusty_jpeg` (`no_std` + `alloc`, the 0.4 release made for this).
 ///
@@ -305,6 +403,99 @@ pub mod encode {
 
 #[cfg(test)]
 mod tests {
+    /// `find_first_eoi` as it was before the eight-byte skip: the oracle.
+    fn find_first_eoi_bytewise(bytes: &[u8]) -> Option<usize> {
+        if bytes.len() < 4 || bytes[0] != 0xFF || bytes[1] != SOI {
+            return None;
+        }
+        let mut i = 2usize;
+        loop {
+            if i + 4 > bytes.len() || bytes[i] != 0xFF {
+                return None;
+            }
+            let marker = bytes[i + 1];
+            match marker {
+                0xFF => {
+                    i += 1;
+                    continue;
+                }
+                0xD8 | 0xD0..=0xD7 | 0x01 => {
+                    i += 2;
+                    continue;
+                }
+                EOI => return Some(i + 2),
+                0xDA => {
+                    let len = usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
+                    i += 2 + len;
+                    break;
+                }
+                _ => {
+                    let len = usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
+                    i += 2 + len;
+                }
+            }
+        }
+        while i + 1 < bytes.len() {
+            if bytes[i] == 0xFF {
+                match bytes[i + 1] {
+                    0x00 | 0xD0..=0xD7 | 0xFF => {}
+                    EOI => return Some(i + 2),
+                    _ => {
+                        if i + 4 > bytes.len() {
+                            return None;
+                        }
+                        let len = usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
+                        i += 2 + len;
+                        continue;
+                    }
+                }
+            }
+            i += 1;
+        }
+        None
+    }
+
+    #[test]
+    fn the_skip_finds_the_same_end_as_the_per_byte_search() {
+        let mut x = 0x9E37_79B9u32;
+        let mut next = move || {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            x
+        };
+        for case in 0..3000u32 {
+            let mut p = std::vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x06, 1, 2, 3, 4];
+            p.extend_from_slice(&[0xFF, 0xDA, 0x00, 0x04, 1, 2]);
+            let len = (next() % 700) as usize;
+            for _ in 0..len {
+                let r = next();
+                match r % 61 {
+                    0 => p.extend_from_slice(&[0xFF, 0x00]),
+                    1 => p.extend_from_slice(&[0xFF, 0xD0 + (r >> 8) as u8 % 8]),
+                    2 => p.extend_from_slice(&[0xFF, 0xFF]),
+                    3 if case % 5 == 0 => p.extend_from_slice(&[0xFF, 0xC4, 0x00, 0x03, 9]),
+                    _ => p.push((r >> 16) as u8 & 0xFE),
+                }
+            }
+            p.extend_from_slice(&[0xFF, 0xD9]);
+            p.extend((0..next() % 20).map(|k| k as u8));
+            // every truncation too: the cutter calls it on prefixes
+            for cut in [
+                p.len(),
+                p.len() / 2,
+                p.len().saturating_sub(1),
+                (next() as usize) % (p.len() + 1),
+            ] {
+                assert_eq!(
+                    find_first_eoi(&p[..cut]),
+                    find_first_eoi_bytewise(&p[..cut]),
+                    "case {case} cut {cut}"
+                );
+            }
+        }
+    }
+
     use super::*;
 
     /// A minimal header: SOI, an APP0 segment, then SOF of the given kind.
@@ -399,5 +590,23 @@ mod tests {
                 assert_eq!(info.geometry.width, u32::from(w));
             }
         }
+    }
+
+    #[test]
+    fn first_eoi_stops_at_the_first_image() {
+        // a minimal image: SOI, an APP0, a DQT-less SOS with two bytes of
+        // scan holding a stuffed FF, then EOI; then the same again
+        let one: &[u8] = &[
+            0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x04, 0x4A, 0x46, 0xFF, 0xDA, 0x00, 0x02, 0x12, 0xFF,
+            0x00, 0x34, 0xFF, 0xD9,
+        ];
+        let mut twice = one.to_vec();
+        twice.extend_from_slice(&[0u8; 7]);
+        twice.extend_from_slice(one);
+        assert_eq!(find_first_eoi(one), Some(one.len()));
+        assert_eq!(find_first_eoi(&twice), Some(one.len()));
+        assert_eq!(find_eoi(&twice), Some(twice.len()));
+        assert_eq!(find_first_eoi(&one[..10]), None);
+        assert_eq!(find_first_eoi(b"not a jpeg"), None);
     }
 }

@@ -22,6 +22,19 @@ The product ids in `sensor/mod.rs` come from `driver/include/sensor.h` and the
 frame-size table from `driver/sensor.c` of the same commit; the SCCB bus
 addresses from the `camera_sccb_addr_t` enum in `driver/include/sensor.h`.
 
+## OV3660 tables and the two driver ports (Apache-2.0)
+
+`crates/rusty_esp_image-core/src/sensor/ov3660.rs` is derived the same way
+(by `tools/convert-sensor-tables.py`) from `sensors/private_include/
+ov3660_settings.h` and `ov3660_regs.h` of the same project at release
+2.1.7 (the ESP-IDF managed component `espressif/esp32-camera`), and
+`crates/rusty_esp_image-core/src/driver/ov3660.rs` and `driver/ov2640.rs`
+are ports of the register logic of `sensors/ov3660.c` and `sensors/ov2640.c`
+of that release (reset and configuration order, the window and clock
+arithmetic, the register masks for quality, format and the test pattern),
+rewritten in Rust as a state machine over a bus trait; the register names
+in them are the C headers'. Same licence, same copyright holder.
+
 The Apache License, Version 2.0 is compatible with this repository's
 MIT OR Apache-2.0 licence. A copy is in `LICENSE-APACHE`. The NOTICE
 requirement of §4(d) is satisfied by this file.
