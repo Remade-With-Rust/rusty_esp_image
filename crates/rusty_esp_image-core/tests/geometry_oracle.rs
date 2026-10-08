@@ -110,9 +110,15 @@ fn geometry_errors_are_unchanged() {
     let src = img(4, 4, 1);
     let mut small = vec![0u8; 4];
     assert!(rotate90_gray8(&src, 4, 4, &mut small).is_err(), "short dst");
-    assert!(rotate90_gray8(&src[..4], 4, 4, &mut [0u8; 16]).is_err(), "short src");
+    assert!(
+        rotate90_gray8(&src[..4], 4, 4, &mut [0u8; 16]).is_err(),
+        "short src"
+    );
     assert!(rotate180(&src, 0, &mut [0u8; 16]).is_err(), "zero bpp");
-    assert!(rotate180(&src, 3, &mut [0u8; 16]).is_err(), "not a whole pixel");
+    assert!(
+        rotate180(&src, 3, &mut [0u8; 16]).is_err(),
+        "not a whole pixel"
+    );
     assert!(rotate180(&src, 1, &mut small).is_err(), "short dst");
 }
 

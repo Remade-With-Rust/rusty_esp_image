@@ -33,10 +33,10 @@
 use esp_hal::dma::DmaRxStreamBuf;
 use esp_hal::lcd_cam::cam::{Camera, CameraTransfer};
 use esp_hal::time::Instant;
+use rusty_esp_image_core::cut::{CutCounts, Cutter};
 use rusty_esp_image_core::esp_core::error::{Error, Result};
 use rusty_esp_image_core::esp_core::frame::{Frame, Geometry, PixelFormat};
 use rusty_esp_image_core::esp_core::time::Micros;
-use rusty_esp_image_core::cut::{CutCounts, Cutter};
 use rusty_esp_image_core::source::ImageSource;
 
 /// Silence that means the stream has stopped, not that a picture is late.
